@@ -1406,7 +1406,7 @@ export default function App() {
                                     <ExternalLink className="w-3 h-3 opacity-60" />
                                   </a>
                                   <a 
-                                    href="https://pembuat-naskah.vercel.app/" 
+                                    href="https://nimo-script-rewrite.vercel.app/" 
                                     target="_blank" 
                                     rel="noopener noreferrer"
                                     className={`flex-1 lg:flex-none px-6 py-5 border font-black uppercase tracking-[0.2em] text-[11px] transition-all rounded-2xl flex items-center justify-center space-x-2 ${isDarkMode ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300 hover:bg-emerald-500 hover:text-white' : 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-600 hover:text-white'}`}
