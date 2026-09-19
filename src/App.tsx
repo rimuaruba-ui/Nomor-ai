@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import JSZip from 'jszip';
 import { Upload, Scissors, FileText, Download, Play, Trash2, Loader2, Home as HomeIcon, Settings, Sun, Moon, Maximize, Minimize, Sparkles, Check, X, RotateCw, AlertCircle, ExternalLink, PenTool, FileEdit, RefreshCw, Zap, Cpu, ShieldCheck } from 'lucide-react';
+import { PWAInstallBanner } from './components/PWAInstallBanner';
 
 interface PanelData {
   id: number;
@@ -636,7 +637,7 @@ export default function App() {
           </a>
 
           <a
-            href="https://pembuat-naskah.vercel.app/"
+            href="https://nimo-script-rewrite.vercel.app/"
             target="_blank"
             rel="noopener noreferrer"
             className={`w-full px-5 py-3.5 rounded-2xl text-[11px] font-black tracking-[0.15em] uppercase transition-all flex items-center justify-between hover:bg-emerald-500/10 group ${
@@ -753,7 +754,8 @@ export default function App() {
 
       <div className="flex-grow flex flex-col overflow-y-auto">
         <div className="flex-grow p-4 md:p-12">
-          <div className="max-w-6xl mx-auto">
+          <div className="max-w-6xl mx-auto space-y-6">
+            <PWAInstallBanner isDarkMode={isDarkMode} />
             {activeTab === 'home' ? (
               <div className="space-y-24 py-8 animate-reveal">
                 {!hasApiKey && (
@@ -1793,6 +1795,24 @@ export default function App() {
                             </div>
                           )}
                         </div>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+
+                {/* PWA App Status & Settings Card */}
+                <section className={`p-8 md:p-12 border transition-all duration-500 rounded-[35px] ${isDarkMode ? 'bg-[#212226] border-white/5' : 'bg-white border-slate-100 shadow-xl'}`}>
+                  <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+                    <div className="flex items-center space-x-5">
+                      <img src="/icon.svg" alt="App Icon" className="w-14 h-14 rounded-2xl shadow-lg border border-indigo-500/30" />
+                      <div className="space-y-1">
+                        <div className="flex items-center space-x-2">
+                          <h3 className={`text-lg font-display font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Aplikasi Web Progresif (PWA)</h3>
+                          <span className="text-[10px] font-mono font-black uppercase bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded-full border border-emerald-500/20">Siap Pasang</span>
+                        </div>
+                        <p className={`text-xs ${isDarkMode ? 'text-zinc-400' : 'text-slate-500'}`}>
+                          Aplikasi ini dapat di-install ke HP (Android/iOS) dan Laptop/PC dengan icon resmi di layar utama Anda.
+                        </p>
                       </div>
                     </div>
                   </div>

@@ -84,8 +84,13 @@ INGAT: Tepat ${imageCount} gambar = Tepat ${imageCount} paragraf naskah. LANGSUN
 }
 
 async function generateWithGoogleGemini(images: any[], prompt: string, customGoogleKey?: string) {
+  const apiKey = customGoogleKey || process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error("Kunci API Gemini belum dikonfigurasi. Silakan atur di pengaturan atau environment variable.");
+  }
+
   const client = new GoogleGenAI({ 
-    apiKey: customGoogleKey || process.env.GEMINI_API_KEY || "",
+    apiKey,
     httpOptions: {
       headers: {
         'User-Agent': 'aistudio-build',
