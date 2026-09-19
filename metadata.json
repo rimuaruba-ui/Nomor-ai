@@ -1,0 +1,8 @@
+{
+  "name": "Remix: Panel nimo",
+  "description": "An AI-powered tool to split comic panels, generate narrative scripts, and create voiceovers for manhwa and manga storytellers.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
