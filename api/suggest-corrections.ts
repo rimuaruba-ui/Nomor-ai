@@ -25,11 +25,7 @@ export default async function handler(req: any, res: any) {
       return res.status(400).json({ error: "Text is required for suggestions" });
     }
 
-    const effectiveKey = userApiKey || process.env.GEMINI_API_KEY;
-    if (!effectiveKey) {
-      return res.status(200).json({ suggestions: [], status: "api_key_not_set" });
-    }
-
+    const effectiveKey = userApiKey || process.env.GEMINI_API_KEY || "";
     const client = new GoogleGenAI({ 
       apiKey: effectiveKey,
       httpOptions: {

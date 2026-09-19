@@ -12,18 +12,14 @@ async function startServer() {
 
   app.use(express.json({ limit: '50mb' }));
 
-  const getGeminiClient = (customKey?: string): GoogleGenAI | null => {
-    const key = customKey || process.env.GEMINI_API_KEY;
-    if (!key) return null;
-    return new GoogleGenAI({ 
-      apiKey: key,
-      httpOptions: {
-        headers: {
-          'User-Agent': 'aistudio-build',
-        }
+  const ai = new GoogleGenAI({ 
+    apiKey: process.env.GEMINI_API_KEY || "",
+    httpOptions: {
+      headers: {
+        'User-Agent': 'aistudio-build',
       }
-    });
-  };
+    }
+  });
 
   // Post-processing function to ensure pure narrative output without headers, brackets, or label tags
   const cleanNarrativeScript = (text: string): string => {
@@ -105,10 +101,14 @@ INGAT: Tepat ${imageCount} gambar = Tepat ${imageCount} paragraf naskah. LANGSUN
   };
 
   const generateWithGoogleGemini = async (images: any[], prompt: string, customGoogleKey?: string) => {
-    const client = getGeminiClient(customGoogleKey);
-    if (!client) {
-      throw new Error("Kunci API Gemini belum dikonfigurasi. Masukkan Gemini API Key di Pengaturan.");
-    }
+    const client = new GoogleGenAI({ 
+      apiKey: customGoogleKey || process.env.GEMINI_API_KEY || "",
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        }
+      }
+    });
 
     const candidateModels = ["gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-flash-latest", "gemini-3-flash-preview"];
     let lastError: any = null;
@@ -349,17 +349,12 @@ INGAT: Tepat ${imageCount} gambar = Tepat ${imageCount} paragraf naskah. LANGSUN
         Bagian "original" dalam respons JSON HARUS merupakan substring yang ada PERSIS sama karakter-demi-karakter di dalam TEKS YANG HARUS DIANALISIS sehingga frontend dapat mencocokkan dan menggantinya langsung. Jangan tambahkan tanda kutip ekstra atau modifikasi pada bagian "original".
       `;
 
-      const client = getGeminiClient();
-      if (!client) {
-        return res.json({ suggestions: [], status: "api_key_not_set" });
-      }
-
       const candidateModels = ["gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-flash-latest"];
       let responseText = "";
 
       for (const model of candidateModels) {
         try {
-          const response = await client.models.generateContent({
+          const response = await ai.models.generateContent({
             model,
             contents: prompt,
             config: {
