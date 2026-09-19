@@ -1,0 +1,8 @@
+{
+  "version": 2,
+  "rewrites": [
+    { "source": "/api/generate-narrative", "destination": "/api/generate-narrative.ts" },
+    { "source": "/api/suggest-corrections", "destination": "/api/suggest-corrections.ts" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}
