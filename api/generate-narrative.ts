@@ -1,9 +1,13 @@
 import { GoogleGenAI } from "@google/genai";
 
+export const config = {
+  maxDuration: 60,
+};
+
 // Post-processing function to ensure pure narrative output without headers, brackets, or label tags
-const cleanNarrativeScript = (text: string): string => {
+function cleanNarrativeScript(text: string): string {
   if (!text) return "";
-  let cleaned = text
+  const cleaned = text
     // Remove markdown code blocks if wrapped
     .replace(/^```[\w]*\n?/gm, '')
     .replace(/```$/gm, '')
@@ -29,10 +33,10 @@ const cleanNarrativeScript = (text: string): string => {
     .filter(p => p.length > 0);
 
   return paragraphs.join('\n\n');
-};
+}
 
-const buildMangaPrompt = (mangaConfig: any, imageCount: number) => {
-  const { title, videoType, style, customStyleRef, detailLevel, chapter, useHook, deliveryStyle } = mangaConfig || {};
+function buildMangaPrompt(mangaConfig: any, imageCount: number) {
+  const { title, style, customStyleRef, chapter, useHook, deliveryStyle } = mangaConfig || {};
   const effectiveStyle = style || 'formal';
   const pov = deliveryStyle === 'pov' ? 'POV Karakter Utama (Gunakan kata ganti "Aku")' : 'Narator Orang Ketiga (Sudut pandang orang ketiga serba tahu)';
 
@@ -77,9 +81,9 @@ ${useHook ? '- CATATAN HOOK: Di paragraf pertama, buat kalimat pembuka yang lang
 
 INGAT: Tepat ${imageCount} gambar = Tepat ${imageCount} paragraf naskah. LANGSUNG NASKAH SAJA tanpa keterangan [Bagian X] atau [Image X]!
 `;
-};
+}
 
-const generateWithGoogleGemini = async (images: any[], prompt: string, customGoogleKey?: string) => {
+async function generateWithGoogleGemini(images: any[], prompt: string, customGoogleKey?: string) {
   const client = new GoogleGenAI({ 
     apiKey: customGoogleKey || process.env.GEMINI_API_KEY || "",
     httpOptions: {
@@ -89,12 +93,7 @@ const generateWithGoogleGemini = async (images: any[], prompt: string, customGoo
     }
   });
 
-  const candidateModels = [
-    "gemini-3.1-flash-lite",
-    "gemini-flash-latest",
-    "gemini-3.8-flash",
-    "gemini-3.1-pro-preview"
-  ];
+  const candidateModels = ["gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-flash-latest"];
   let lastError: any = null;
 
   for (const model of candidateModels) {
@@ -121,21 +120,16 @@ const generateWithGoogleGemini = async (images: any[], prompt: string, customGoo
         return response.text;
       }
     } catch (err: any) {
-      const errMsg = err?.message || String(err);
-      if (errMsg.includes('503') || errMsg.includes('high demand') || errMsg.includes('UNAVAILABLE')) {
-        console.log(`[Gemini Fallback] Model ${model} sedang padat (503), beralih ke model berikutnya...`);
-      } else {
-        console.warn(`[Gemini Fallback] Model ${model} mengalami kendala:`, errMsg);
-      }
+      console.warn(`Model Google Gemini (${model}) mengalami kendala:`, err?.message || err);
       lastError = err;
       continue;
     }
   }
 
-  throw lastError || new Error("Layanan Gemini sedang mengalami lonjakan trafik tinggi (503). Silakan coba sesaat lagi.");
-};
+  throw lastError || new Error("Layanan Gemini sedang mengalami lonjakan trafik tinggi. Silakan coba sesaat lagi.");
+}
 
-const generateWithKieGeminiFlash = async (images: any[], prompt: string, kieKey: string) => {
+async function generateWithKieGeminiFlash(images: any[], prompt: string, kieKey: string) {
   const response = await fetch("https://api.kie.ai/gemini/v1/models/gemini-3-7-flash:streamGenerateContent", {
     method: "POST",
     headers: {
@@ -201,9 +195,9 @@ const generateWithKieGeminiFlash = async (images: any[], prompt: string, kieKey:
   }
 
   return fullText;
-};
+}
 
-const generateWithKieGeminiPro = async (images: any[], prompt: string, kieKey: string) => {
+async function generateWithKieGeminiPro(images: any[], prompt: string, kieKey: string) {
   const response = await fetch("https://api.kie.ai/gemini-3.1-pro/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -237,17 +231,20 @@ const generateWithKieGeminiPro = async (images: any[], prompt: string, kieKey: s
   const data: any = await response.json();
   const fullText = data.choices?.[0]?.message?.content || "";
   return fullText;
-};
+}
 
 export default async function handler(req: any, res: any) {
-  // Handle CORS and preflight
-  if (req.method === 'OPTIONS') {
-    res.status(200).end();
-    return;
+  // Enable CORS if needed
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+
+  if (req.method === "OPTIONS") {
+    return res.status(200).end();
   }
 
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method not allowed. Use POST." });
   }
 
   try {

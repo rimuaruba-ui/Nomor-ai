@@ -1,25 +1,33 @@
 import { GoogleGenAI, Type } from "@google/genai";
 
+export const config = {
+  maxDuration: 30,
+};
+
 export default async function handler(req: any, res: any) {
-  // Handle CORS and preflight
-  if (req.method === 'OPTIONS') {
-    res.status(200).end();
-    return;
+  // Enable CORS if needed
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+
+  if (req.method === "OPTIONS") {
+    return res.status(200).end();
   }
 
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method not allowed. Use POST." });
   }
 
   try {
-    const { text, title, style } = req.body || {};
-    
-    if (!text || typeof text !== "string" || text.trim().length < 5) {
-      return res.status(200).json({ suggestions: [] });
+    const { text, mangaConfig, userApiKey } = req.body || {};
+
+    if (!text || typeof text !== "string" || text.trim().length === 0) {
+      return res.status(400).json({ error: "Text is required for suggestions" });
     }
 
-    const ai = new GoogleGenAI({ 
-      apiKey: process.env.GEMINI_API_KEY || "",
+    const effectiveKey = userApiKey || process.env.GEMINI_API_KEY || "";
+    const client = new GoogleGenAI({ 
+      apiKey: effectiveKey,
       httpOptions: {
         headers: {
           'User-Agent': 'aistudio-build',
@@ -27,33 +35,36 @@ export default async function handler(req: any, res: any) {
       }
     });
 
-    const prompt = `
-      Tugas: Analisis teks naskah alur cerita komik/manga berikut dan berikan saran perbaikan tata bahasa (grammar/spelling), pilihan kata yang lebih kaya (vocabulary), atau variasi kalimat bergaya YouTube Recap / Storytelling (Bahasa Indonesia) agar terdengar lebih dramatis, seru, dan mengalir natural saat dibaca / disuarakan.
+    const style = mangaConfig?.style || 'formal';
 
-      INFORMASI TAMBAHAN (Jika relevan):
-      - Judul Cerita: ${title || "Tidak disebutkan"}
-      - Gaya Alur: ${style || "dramatis"}
+    const systemPrompt = `Kamu adalah editor naskah profesional berbahasa Indonesia untuk video konten narasi manga/manhwa di YouTube dan media sosial.
+Tugasmu adalah menganalisis teks naskah narasi berikut dan memberikan daftar saran perbaikan/penyempurnaan yang mencakup:
+1. 'tata_bahasa': Kesalahan ejaan, salah ketik (typo), tanda baca, huruf kapital, atau ketidaktepatan imbuhan kata dalam bahasa Indonesia.
+2. 'pilihan_kata': Saran kata ganti (diksi) yang lebih tepat, natural, kaya, atau lebih sinematik sesuai gaya penceritaan.
+3. 'gaya_bahasa': Rekomendasi penyusunan ulang kalimat agar lebih mengalir (flow), dinamis, dan enak dibaca saat diucapkan sebagai voiceover (gaya target: ${style}).
 
-      TEKS YANG HARUS DIANALISIS:
-      "${text}"
+Aturan:
+- Berikan saran yang benar-benar relevan dan meningkatkan kualitas naskah.
+- 'original': Potongan kata atau frasa asli yang perlu diubah (harus persis ada di teks).
+- 'replacement': Kata atau frasa perbaikan penggantinya.
+- 'explanation': Alasan ringkas dan jelas mengapa perbaikan tersebut disarankan.
+- Jika teks sudah sangat bagus dan tidak ada yang perlu diperbaiki, kembalikan array kosong.`;
 
-      PANDUAN SARAN:
-      1. "tata_bahasa": Temukan salah tik (typo), kesalahan ejaan formal/tidak baku, tanda baca yang hilang yang mengganggu jeda napas (breathability), dll. Misal: "slalu" -> "selalu", "karna" -> "karena".
-      2. "pilihan_kata": Identifikasi pengulangan kata yang membosankan (seperti mengulang kata "lalu", "lalu", "lalu") dan sarankan sinonim yang lebih kaya (kemudian, setelah itu, tak berselang lama, selanjutnya, alhasil).
-      3. "gaya_bahasa": Untuk kalimat yang terdengar kaku, berikan alternatif kalimat terstruktur yang lebih dramatis, sinematik, suspenseful, atau membangkitkan emosi pendengar YT recap.
-      
-      CRITICAL RULE:
-      Bagian "original" dalam respons JSON HARUS merupakan substring yang ada PERSIS sama karakter-demi-karakter di dalam TEKS YANG HARUS DIANALISIS sehingga frontend dapat mencocokkan dan menggantinya langsung. Jangan tambahkan tanda kutip ekstra atau modifikasi pada bagian "original".
-    `;
-
-    const candidateModels = ["gemini-3.1-flash-lite", "gemini-flash-latest", "gemini-3.8-flash"];
-    let responseText = "";
+    const candidateModels = ["gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-flash-latest"];
+    let lastError: any = null;
 
     for (const model of candidateModels) {
       try {
-        const response = await ai.models.generateContent({
+        const response = await client.models.generateContent({
           model,
-          contents: prompt,
+          contents: [
+            {
+              role: "user",
+              parts: [
+                { text: `${systemPrompt}\n\nNaskah yang dianalisis:\n"""\n${text}\n"""` }
+              ]
+            }
+          ],
           config: {
             responseMimeType: "application/json",
             responseSchema: {
@@ -61,32 +72,19 @@ export default async function handler(req: any, res: any) {
               properties: {
                 suggestions: {
                   type: Type.ARRAY,
-                  description: "Daftar saran perbaikan naskah berurutan",
                   items: {
                     type: Type.OBJECT,
                     properties: {
-                      type: {
-                        type: Type.STRING,
-                        description: "Kategori saran: 'tata_bahasa', 'pilihan_kata', 'gaya_bahasa'"
-                      },
-                      severity: {
-                        type: Type.STRING,
-                        description: "Tingkat dampak: 'warning' atau 'info'"
-                      },
-                      original: {
-                        type: Type.STRING,
-                        description: "Sub-teks asli yang persis ada di teks input untuk diganti."
-                      },
-                      replacement: {
-                        type: Type.STRING,
-                        description: "Teks pengganti yang disarankan."
-                      },
-                      explanation: {
-                        type: Type.STRING,
-                        description: "Penjelasan singkat mengapa saran ini lebih baik (dalam Bahasa Indonesia)."
+                      original: { type: Type.STRING, description: "Potongan kata/frasa asli yang perlu diubah" },
+                      replacement: { type: Type.STRING, description: "Kata/frasa pengganti yang disarankan" },
+                      explanation: { type: Type.STRING, description: "Alasan perbaikan" },
+                      type: { 
+                        type: Type.STRING, 
+                        enum: ["tata_bahasa", "pilihan_kata", "gaya_bahasa"],
+                        description: "Kategori perbaikan"
                       }
                     },
-                    required: ["type", "severity", "original", "replacement", "explanation"]
+                    required: ["original", "replacement", "explanation", "type"]
                   }
                 }
               },
@@ -96,31 +94,19 @@ export default async function handler(req: any, res: any) {
         });
 
         if (response.text) {
-          responseText = response.text;
-          break;
+          const parsed = JSON.parse(response.text);
+          return res.status(200).json({ suggestions: parsed.suggestions || [] });
         }
-      } catch (modelErr: any) {
-        const msg = modelErr?.message || String(modelErr);
-        if (msg.includes('503') || msg.includes('high demand') || msg.includes('UNAVAILABLE')) {
-          continue;
-        }
-        console.warn(`Saran AI model ${model} mengalami kendala:`, msg);
+      } catch (err: any) {
+        console.warn(`Model Suggestion (${model}) mengalami kendala:`, err?.message || err);
+        lastError = err;
         continue;
       }
     }
 
-    if (responseText) {
-      try {
-        const parsed = JSON.parse(responseText);
-        return res.status(200).json(parsed);
-      } catch {
-        return res.status(200).json({ suggestions: [] });
-      }
-    }
-
-    return res.status(200).json({ suggestions: [], status: "temporarily_busy" });
+    throw lastError || new Error("Gagal menganalisis naskah.");
   } catch (error: any) {
-    console.warn("Suggestions unavailable (high traffic):", error.message || error);
-    return res.status(200).json({ suggestions: [], status: "unavailable" });
+    console.error("AI Suggestions Error:", error);
+    return res.status(500).json({ error: error.message || "Internal Server Error" });
   }
 }

@@ -1,8 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { GoogleGenAI } from "@google/genai";
 import JSZip from 'jszip';
-import { Upload, Scissors, FileText, Download, Play, Trash2, Loader2, Home as HomeIcon, Settings, Sun, Moon, Maximize, Minimize, Sparkles, Check, X, RotateCw, AlertCircle, ExternalLink, PenTool, FileEdit, RefreshCw, Zap, Cpu, ShieldCheck, Smartphone, ArrowUpDown, Clock, SortAsc } from 'lucide-react';
-import { PWAInstallBanner } from './components/PWAInstallBanner';
+import { Upload, Scissors, FileText, Download, Play, Trash2, Loader2, Home as HomeIcon, Settings, Sun, Moon, Maximize, Minimize, Sparkles, Check, X, RotateCw, AlertCircle, ExternalLink, PenTool, FileEdit, RefreshCw, Zap, Cpu, ShieldCheck } from 'lucide-react';
 
 interface PanelData {
   id: number;
@@ -18,33 +16,29 @@ interface UploadedImage {
   file: File;
   img: HTMLImageElement;
   name: string;
-  uploadedAt: number;
   splitPoints: number[];
   panels: PanelData[];
   hiddenPanels: number[];
 }
 
-// Natural sort function for filenames (e.g., Image 1, Image 2, Image 10)
-const naturalCompare = (a: string, b: string) => {
-  return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
-};
-
-// Sort helper based on selected sortMode
-const sortImagesList = (list: UploadedImage[], mode: 'name' | 'time') => {
-  return [...list].sort((a, b) => {
-    if (mode === 'name') {
-      return naturalCompare(a.name, b.name);
-    } else {
-      // Sort by upload timestamp (oldest first, or newest first)
-      return a.uploadedAt - b.uploadedAt;
-    }
-  });
-};
-
-// Utility: compress and scale down image for faster upload & token savings
-const compressImageForAI = (imgElement: HTMLImageElement, maxDim = 1400, quality = 0.85): Promise<{ data: string; mimeType: string }> => {
+// Utility: adaptive compression and scale down for images to ensure Vercel Serverless Function body limit (<4.5MB) is never exceeded
+const compressImageForAI = (imgElement: HTMLImageElement, totalCount: number = 1): Promise<{ data: string; mimeType: string }> => {
   return new Promise((resolve) => {
     try {
+      // Scale dimensions & quality adaptively based on image count
+      let maxDim = 1200;
+      let quality = 0.80;
+      if (totalCount > 15) {
+        maxDim = 720;
+        quality = 0.68;
+      } else if (totalCount > 8) {
+        maxDim = 850;
+        quality = 0.72;
+      } else if (totalCount > 3) {
+        maxDim = 1000;
+        quality = 0.78;
+      }
+
       const canvas = document.createElement('canvas');
       let w = imgElement.naturalWidth || imgElement.width || 1200;
       let h = imgElement.naturalHeight || imgElement.height || 1600;
@@ -110,23 +104,6 @@ export default function App() {
     setActiveTab(tab);
   };
   
-  // Dynamic Gemini AI instance
-  const getAiInstance = () => {
-    let key = '';
-    if (userApiKey) {
-      if (userApiKey.startsWith('AIzaSy')) {
-        key = userApiKey;
-      } else {
-        return null; // Invalid format
-      }
-    } else {
-      key = process.env.GEMINI_API_KEY || '';
-    }
-    
-    if (!key) return null;
-    return new GoogleGenAI({ apiKey: key });
-  };
-  
   const [uploadedImages, setUploadedImages] = useState<UploadedImage[]>([]);
   const [activeImageIndex, setActiveImageIndex] = useState<number>(0);
   
@@ -172,9 +149,6 @@ export default function App() {
   const [cutterImages, setCutterImages] = useState<UploadedImage[]>([]);
   const [activeCutterIndex, setActiveCutterIndex] = useState<number>(0);
   
-  // Sort criteria: 'name' (Image 1, Image 2, etc.) or 'time' (upload time)
-  const [sortMode, setSortMode] = useState<'name' | 'time'>('name');
-  
   const currentImage = activeTab === 'panel-cutter' 
     ? (cutterImages[activeCutterIndex] || null)
     : (uploadedImages[activeImageIndex] || null);
@@ -197,24 +171,11 @@ export default function App() {
     return () => observer.disconnect();
   }, [activeTab]);
 
-  // Handler to apply sort mode dynamically
-  const applySortMode = (newMode: 'name' | 'time') => {
-    setSortMode(newMode);
-    if (activeTab === 'panel-cutter') {
-      setCutterImages(prev => sortImagesList(prev, newMode));
-      setActiveCutterIndex(0);
-    } else {
-      setUploadedImages(prev => sortImagesList(prev, newMode));
-      setActiveImageIndex(0);
-    }
-  };
-
-  // Handle Image Upload with Automatic Natural Name Sorting by default
+  // Handle Image Upload
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files && files.length > 0) {
-      const now = Date.now();
-      const newImagesPromises = Array.from(files).map((file: File, fileIndex: number) => {
+      const newImagesPromises = Array.from(files).map((file: File) => {
         return new Promise<UploadedImage>((resolve) => {
           const reader = new FileReader();
           reader.onload = (event) => {
@@ -225,7 +186,6 @@ export default function App() {
                 file: file,
                 img: img,
                 name: file.name,
-                uploadedAt: now + fileIndex,
                 splitPoints: [0],
                 panels: [],
                 hiddenPanels: []
@@ -239,10 +199,7 @@ export default function App() {
 
       Promise.all(newImagesPromises).then(newImages => {
         if (activeTab === 'panel-cutter') {
-          setCutterImages(prev => {
-            const combined = [...prev, ...newImages];
-            return sortImagesList(combined, sortMode);
-          });
+          setCutterImages(prev => [...prev, ...newImages]);
           if (cutterImages.length === 0) setActiveCutterIndex(0);
         } else {
           const imagesWithDefaultPanel = newImages.map(img => ({
@@ -256,10 +213,7 @@ export default function App() {
               error: null
             }]
           }));
-          setUploadedImages(prev => {
-            const combined = [...prev, ...imagesWithDefaultPanel];
-            return sortImagesList(combined, sortMode);
-          });
+          setUploadedImages(prev => [...prev, ...imagesWithDefaultPanel]);
           if (uploadedImages.length === 0) setActiveImageIndex(0);
         }
       });
@@ -406,19 +360,15 @@ export default function App() {
     
     // Check for specific Gemini/Google AI status codes
     if (message.includes('429') || message.toLowerCase().includes('quota') || message.toLowerCase().includes('rate limit') || message.includes('RESOURCE_EXHAUSTED')) {
-      return "QUOTA EXCEEDED: Batas penggunaan API Gemini bersama telah tercapai. Silakan pasang API Key pribadi Anda di menu Setelan, atau kurangi jumlah gambar yang diunggah sekaligus agar hemat kuota.";
+      return "QUOTA EXCEEDED: Batas penggunaan API Gemini telah tercapai. Silakan gunakan API Key pribadi Anda di menu Pengaturan atau tunggu beberapa saat.";
     }
     
     if (message.includes('403') || message.toLowerCase().includes('permission denied') || message.toLowerCase().includes('not authorized')) {
-      return "PERMISSION DENIED: API Key tidak valid atau tidak memiliki izin akses. Pastikan API Key di Setelan sudah benar dan aktif.";
+      return "PERMISSION DENIED: API Key tidak valid atau tidak memiliki izin akses. Pastikan API Key di Pengaturan sudah benar dan aktif.";
     }
     
     if (message.includes('API_KEY_INVALID')) {
-      return "INVALID KEY: API Key yang Anda masukkan tidak valid. Silakan periksa kembali di menu Setelan.";
-    }
-
-    if (message.includes('Unexpected token') || message.includes('is not valid JSON') || message.includes('JSON.parse') || message.includes('JSON Input')) {
-      return "SISTEM OVERLOAD / TIMEOUT: Server atau Gateway mengembalikan dokumen HTML alih-alih data JSON. Hal ini biasanya disebabkan karena kuota API bersama habis, server sedang restart, atau durasi pengerjaan naskah terlalu lama karena memproses terlalu banyak gambar sekaligus. Solusi: Kurangi jumlah gambar yang diunggah sekali jalan (disarankan maksimal 3-5 gambar) atau gunakan API Key pribadi di menu Setelan.";
+      return "INVALID KEY: API Key yang Anda masukkan tidak valid. Silakan periksa kembali di menu Pengaturan.";
     }
 
     return message;
@@ -436,9 +386,9 @@ export default function App() {
     setFullNarrative('');
 
     try {
-      // Compress all uploaded images to prevent payload limits and speed up generation
+      // Compress all uploaded images adaptively to prevent payload limits and speed up generation
       const imagesData = await Promise.all(
-        uploadedImages.map(img => compressImageForAI(img.img))
+        uploadedImages.map(img => compressImageForAI(img.img, uploadedImages.length))
       );
 
       const response = await fetch("/api/generate-narrative", {
@@ -454,30 +404,11 @@ export default function App() {
       });
 
       if (!response.ok) {
-        let errorMsg = "Server error during generation";
-        try {
-          const errData = await response.json();
-          errorMsg = errData.error || errorMsg;
-        } catch {
-          try {
-            const rawHtml = await response.text();
-            if (rawHtml && (rawHtml.toLowerCase().includes("gateway") || rawHtml.toLowerCase().includes("timeout") || rawHtml.toLowerCase().includes("unavailable") || rawHtml.toLowerCase().includes("the page"))) {
-              errorMsg = "SISTEM OVERLOAD / TIMEOUT: Gateway atau server mengalami timeout saat memproses gambar Anda. Harap kurangi jumlah gambar atau gunakan API Key pribadi Anda di menu Setelan.";
-            } else if (rawHtml) {
-              errorMsg = `Server Response (HTML): ${rawHtml.slice(0, 120)}...`;
-            }
-          } catch {}
-        }
-        throw new Error(errorMsg);
+        const errData = await response.json();
+        throw new Error(errData.error || "Server error during generation");
       }
 
-      let data: any;
-      try {
-        data = await response.json();
-      } catch (jsonErr) {
-        throw new Error("SISTEM OVERLOAD / TIMEOUT: Server mengembalikan dokumen HTML alih-alih data JSON. Silakan coba kurangi jumlah gambar atau pasang API Key Anda sendiri di menu Setelan.");
-      }
-
+      const data = await response.json();
       const sanitizedNarrative = cleanClientNarrative(data.text || '');
       setFullNarrative(sanitizedNarrative);
       if (data.provider) {
@@ -530,7 +461,7 @@ export default function App() {
       } finally {
         setIsAnalyzingText(false);
       }
-    }, 3000); // 3.0 seconds quiet typing window to prevent redundant quota usage
+    }, 1800); // 1.8 seconds quiet typing window
 
     return () => clearTimeout(timer);
   }, [fullNarrative, uploadedImages, enableAiSuggestions, lastAnalyzedText, mangaConfig.title, mangaConfig.style]);
@@ -822,9 +753,7 @@ export default function App() {
 
       <div className="flex-grow flex flex-col overflow-y-auto">
         <div className="flex-grow p-4 md:p-12">
-          <div className="max-w-6xl mx-auto space-y-6">
-            {/* PWA Install Notification Banner */}
-            <PWAInstallBanner isDarkMode={isDarkMode} />
+          <div className="max-w-6xl mx-auto">
             {activeTab === 'home' ? (
               <div className="space-y-24 py-8 animate-reveal">
                 {!hasApiKey && (
@@ -921,8 +850,8 @@ export default function App() {
 
                   {/* Fitur Rewrite Naskah (Urutan 3) */}
                   <a 
-                    href="https://nimo-script-rewrite.vercel.app/"
-                    target="_blank" 
+                    href="https://pembuat-naskah.vercel.app/"
+                    target="_blank"
                     rel="noopener noreferrer"
                     className={`p-12 border transition-all cursor-pointer group relative overflow-hidden rounded-[40px] ${isDarkMode ? 'bg-[#212226] border-white/5 hover:border-emerald-500/30 active:bg-zinc-900' : 'bg-white border-slate-100 hover:border-emerald-200 shadow-xl hover:shadow-2xl active:bg-zinc-50'}`}
                   >
@@ -1053,38 +982,8 @@ export default function App() {
 
                         {uploadedImages.length > 0 && (
                           <div className="mt-12 w-full space-y-6">
-                            <div className="flex flex-wrap gap-2 justify-between items-center px-2">
-                              <div className="flex items-center gap-2">
-                                <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-indigo-500">Tumpukan Aset ({uploadedImages.length})</h3>
-                                <div className={`inline-flex items-center rounded-xl p-1 border text-[9px] font-bold ${isDarkMode ? 'bg-[#18191c] border-white/10' : 'bg-slate-100 border-slate-200'}`}>
-                                  <button
-                                    type="button"
-                                    onClick={() => applySortMode('name')}
-                                    className={`flex items-center gap-1 px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
-                                      sortMode === 'name'
-                                        ? 'bg-indigo-600 text-white shadow-sm'
-                                        : isDarkMode ? 'text-zinc-400 hover:text-white' : 'text-zinc-600 hover:text-slate-900'
-                                    }`}
-                                    title="Urutkan nama secara natural (Image 1, Image 2, dst)"
-                                  >
-                                    <SortAsc className="w-3 h-3" />
-                                    <span>Nama</span>
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => applySortMode('time')}
-                                    className={`flex items-center gap-1 px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
-                                      sortMode === 'time'
-                                        ? 'bg-indigo-600 text-white shadow-sm'
-                                        : isDarkMode ? 'text-zinc-400 hover:text-white' : 'text-zinc-600 hover:text-slate-900'
-                                    }`}
-                                    title="Urutkan berdasarkan waktu unggah"
-                                  >
-                                    <Clock className="w-3 h-3" />
-                                    <span>Waktu</span>
-                                  </button>
-                                </div>
-                              </div>
+                            <div className="flex justify-between items-center px-2">
+                              <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-indigo-500">Tumpukan Aset ({uploadedImages.length})</h3>
                               <button onClick={() => setUploadedImages([])} className="text-[10px] font-black text-rose-500 uppercase tracking-widest hover:underline transition-all">Kosongkan Tumpukan</button>
                             </div>
                             <div className="grid grid-cols-4 md:grid-cols-6 lg:grid-cols-4 gap-3 p-2">
@@ -1100,11 +999,6 @@ export default function App() {
                                 >
                                   <img src={img.img.src} alt={img.name} className="w-full h-full object-cover" />
                                   <div className="absolute inset-0 bg-indigo-500/10 opacity-0 group-hover/item:opacity-100 transition-opacity"></div>
-                                  <div className={`absolute bottom-0 inset-x-0 px-1.5 py-0.5 text-[8px] font-mono truncate text-center transition-colors ${
-                                    isDarkMode ? 'bg-black/75 text-zinc-300' : 'bg-white/90 text-slate-900'
-                                  }`}>
-                                    {img.name}
-                                  </div>
                                 </div>
                               ))}
                             </div>
@@ -1512,7 +1406,7 @@ export default function App() {
                                     <ExternalLink className="w-3 h-3 opacity-60" />
                                   </a>
                                   <a 
-                                    href="https://nimo-script-rewrite.vercel.app/" 
+                                    href="https://pembuat-naskah.vercel.app/" 
                                     target="_blank" 
                                     rel="noopener noreferrer"
                                     className={`flex-1 lg:flex-none px-6 py-5 border font-black uppercase tracking-[0.2em] text-[11px] transition-all rounded-2xl flex items-center justify-center space-x-2 ${isDarkMode ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300 hover:bg-emerald-500 hover:text-white' : 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-600 hover:text-white'}`}
@@ -1885,10 +1779,10 @@ export default function App() {
                         
                         <div className="flex flex-col md:flex-row items-center justify-between gap-6 px-4">
                           <div className="flex items-center space-x-4">
-                            <div className={`w-3 h-3 rounded-full shadow-lg ${userApiKey.startsWith('AIzaSy') || (!userApiKey && process.env.GEMINI_API_KEY) ? 'bg-emerald-500 shadow-emerald-500/20 animate-pulse' : 'bg-rose-500 shadow-rose-500/20'}`}></div>
+                            <div className={`w-3 h-3 rounded-full shadow-lg ${userApiKey.startsWith('AIzaSy') || !userApiKey ? 'bg-emerald-500 shadow-emerald-500/20 animate-pulse' : 'bg-rose-500 shadow-rose-500/20'}`}></div>
                             <span className={`text-[10px] font-black uppercase tracking-[0.3em] font-mono ${isDarkMode ? 'text-zinc-600' : 'text-slate-400'}`}>
-                              Status Node: <span className={(userApiKey.startsWith('AIzaSy') || (!userApiKey && process.env.GEMINI_API_KEY)) ? 'text-emerald-500' : 'text-rose-500'}>
-                                {(userApiKey.startsWith('AIzaSy') || (!userApiKey && process.env.GEMINI_API_KEY)) ? 'AKTIF' : 'SIAGA'}
+                              Status Node: <span className={(userApiKey.startsWith('AIzaSy') || !userApiKey) ? 'text-emerald-500' : 'text-rose-500'}>
+                                {(userApiKey.startsWith('AIzaSy') || !userApiKey) ? 'AKTIF (SERVER TERHUBUNG)' : 'KUNCI TIDAK VALID'}
                               </span>
                             </span>
                           </div>
@@ -1899,34 +1793,6 @@ export default function App() {
                             </div>
                           )}
                         </div>
-                      </div>
-                    </div>
-                  </div>
-                </section>
-
-                {/* PWA Application & Install Status Card */}
-                <section className={`p-10 lg:p-16 border transition-all rounded-[45px] ${isDarkMode ? 'bg-[#212226] border-white/5' : 'bg-white border-slate-100 shadow-2xl'}`}>
-                  <div className="space-y-8">
-                    <div className="flex items-center space-x-6">
-                      <div className="w-1 h-10 bg-indigo-500 rounded-full"></div>
-                      <div className="space-y-1">
-                        <h2 className={`text-2xl font-display font-black uppercase tracking-tight transition-colors ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Aplikasi PWA & Pemasangan</h2>
-                        <p className="text-[10px] font-mono font-black uppercase tracking-[0.3em] text-indigo-500/60">Instalasi Layar Utama Tanpa Browser</p>
-                      </div>
-                    </div>
-
-                    <div className="flex flex-col sm:flex-row items-center justify-between gap-6 p-6 rounded-3xl border border-dashed border-indigo-500/30 bg-indigo-500/5">
-                      <div className="flex items-center gap-4">
-                        <img src="/icon.svg" alt="Panel Nimo" className="w-14 h-14 rounded-2xl bg-slate-950 p-2 shadow-lg border border-white/10" />
-                        <div>
-                          <h4 className="font-bold text-sm">Remix: Panel nimo (PWA)</h4>
-                          <p className={`text-xs mt-0.5 ${isDarkMode ? 'text-zinc-400' : 'text-zinc-600'}`}>
-                            Aplikasi siap dipasang di Android, iOS, Windows, maupun Mac dengan ikon eksklusif.
-                          </p>
-                        </div>
-                      </div>
-                      <div className="shrink-0">
-                        <PWAInstallBanner isDarkMode={isDarkMode} />
                       </div>
                     </div>
                   </div>
@@ -1983,58 +1849,20 @@ export default function App() {
                       />
 
                       {cutterImages.length > 0 && (
-                        <div className="mt-12 w-full space-y-6">
-                          <div className="flex flex-wrap gap-2 justify-between items-center px-2">
-                            <div className="flex items-center gap-2">
-                              <h3 className={`text-[10px] font-black uppercase tracking-[0.3em] transition-colors ${isDarkMode ? 'text-[#8b5cf6]' : 'text-indigo-600'}`}>Arsip Terdeteksi ({cutterImages.length})</h3>
-                              <div className={`inline-flex items-center rounded-xl p-1 border text-[9px] font-bold ${isDarkMode ? 'bg-[#18191c] border-white/10' : 'bg-slate-100 border-slate-200'}`}>
-                                <button
-                                  type="button"
-                                  onClick={() => applySortMode('name')}
-                                  className={`flex items-center gap-1 px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
-                                    sortMode === 'name'
-                                      ? 'bg-[#8b5cf6] text-white shadow-sm'
-                                      : isDarkMode ? 'text-zinc-400 hover:text-white' : 'text-zinc-600 hover:text-slate-900'
-                                  }`}
-                                  title="Urutkan nama secara natural (Image 1, Image 2, dst)"
-                                >
-                                  <SortAsc className="w-3 h-3" />
-                                  <span>Nama</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => applySortMode('time')}
-                                  className={`flex items-center gap-1 px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
-                                    sortMode === 'time'
-                                      ? 'bg-[#8b5cf6] text-white shadow-sm'
-                                      : isDarkMode ? 'text-zinc-400 hover:text-white' : 'text-zinc-600 hover:text-slate-900'
-                                  }`}
-                                  title="Urutkan berdasarkan waktu unggah"
-                                >
-                                  <Clock className="w-3 h-3" />
-                                  <span>Waktu</span>
-                                </button>
-                              </div>
-                            </div>
-                            <button onClick={() => setCutterImages([])} className="text-[10px] font-black text-rose-500 uppercase tracking-widest hover:underline transition-all">Kosongkan</button>
-                          </div>
+                        <div className="mt-12 w-full">
+                          <h3 className={`text-[10px] font-black uppercase tracking-[0.3em] mb-6 transition-colors ${isDarkMode ? 'text-[#8b5cf6]' : 'text-gray-400'}`}>Arsip Terdeteksi ({cutterImages.length})</h3>
                           <div className="flex flex-wrap justify-center gap-4">
                             {cutterImages.map((img, idx) => (
                               <button
                                 key={img.id}
                                 onClick={() => setActiveCutterIndex(idx)}
-                                className={`relative w-20 h-28 overflow-hidden border-2 transition-all rounded-xl cursor-pointer ${
-                                  activeCutterIndex === idx ? 'border-[#8b5cf6] shadow-[0_0_15px_rgba(139,92,246,0.4)] scale-105 z-10' : 'border-white/10 hover:border-white/30 brightness-60 hover:brightness-100'
+                                className={`relative w-20 h-28 overflow-hidden border-2 transition-all ${
+                                  activeCutterIndex === idx ? 'border-[#8b5cf6] shadow-[0_0_15px_rgba(139,92,246,0.4)] scale-105 z-10' : 'border-white/10 hover:border-white/30 brightness-50 hover:brightness-100'
                                 }`}
                               >
                                 <img src={img.img.src} alt={img.name} className="w-full h-full object-cover" />
-                                <div className={`absolute top-0 left-0 px-1.5 py-0.5 text-[9px] font-mono font-bold transition-colors ${isDarkMode ? 'bg-black/80 text-[#8b5cf6]' : 'bg-white/90 text-black'}`}>
+                                <div className={`absolute top-0 left-0 px-2 py-1 text-[10px] font-mono transition-colors ${isDarkMode ? 'bg-black/80 text-[#8b5cf6]' : 'bg-white/80 text-black'}`}>
                                   {idx + 1}
-                                </div>
-                                <div className={`absolute bottom-0 inset-x-0 px-1 py-0.5 text-[8px] font-mono truncate text-center transition-colors ${
-                                  isDarkMode ? 'bg-black/80 text-zinc-300' : 'bg-white/90 text-slate-900'
-                                }`}>
-                                  {img.name}
                                 </div>
                               </button>
                             ))}

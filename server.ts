@@ -110,12 +110,7 @@ INGAT: Tepat ${imageCount} gambar = Tepat ${imageCount} paragraf naskah. LANGSUN
       }
     });
 
-    const candidateModels = [
-      "gemini-3.1-flash-lite",
-      "gemini-flash-latest",
-      "gemini-3.8-flash",
-      "gemini-3.1-pro-preview"
-    ];
+    const candidateModels = ["gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-flash-latest", "gemini-3-flash-preview"];
     let lastError: any = null;
 
     for (const model of candidateModels) {
@@ -142,13 +137,7 @@ INGAT: Tepat ${imageCount} gambar = Tepat ${imageCount} paragraf naskah. LANGSUN
           return response.text;
         }
       } catch (err: any) {
-        const errMsg = err?.message || String(err);
-        // Only log minimal message if it is a common 503 high-demand spike
-        if (errMsg.includes('503') || errMsg.includes('high demand') || errMsg.includes('UNAVAILABLE')) {
-          console.log(`[Gemini Fallback] Model ${model} sedang padat (503), beralih ke model berikutnya...`);
-        } else {
-          console.warn(`[Gemini Fallback] Model ${model} mengalami kendala:`, errMsg);
-        }
+        console.warn(`Model Google Gemini (${model}) mengalami kendala/503:`, err?.message || err);
         lastError = err;
         continue;
       }
@@ -360,8 +349,7 @@ INGAT: Tepat ${imageCount} gambar = Tepat ${imageCount} paragraf naskah. LANGSUN
         Bagian "original" dalam respons JSON HARUS merupakan substring yang ada PERSIS sama karakter-demi-karakter di dalam TEKS YANG HARUS DIANALISIS sehingga frontend dapat mencocokkan dan menggantinya langsung. Jangan tambahkan tanda kutip ekstra atau modifikasi pada bagian "original".
       `;
 
-      // Prioritize high-throughput, low-latency models for real-time background suggestions
-      const candidateModels = ["gemini-3.1-flash-lite", "gemini-flash-latest", "gemini-3.8-flash"];
+      const candidateModels = ["gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-flash-latest"];
       let responseText = "";
 
       for (const model of candidateModels) {
@@ -415,12 +403,7 @@ INGAT: Tepat ${imageCount} gambar = Tepat ${imageCount} paragraf naskah. LANGSUN
             break;
           }
         } catch (modelErr: any) {
-          const msg = modelErr?.message || String(modelErr);
-          if (msg.includes('503') || msg.includes('high demand') || msg.includes('UNAVAILABLE')) {
-            // Saturated model: quiet fallback to next model
-            continue;
-          }
-          console.warn(`Saran AI model ${model} mengalami kendala:`, msg);
+          console.warn(`Saran AI model ${model} sedang padat/503 (${modelErr.message || modelErr}). Mencoba alternatif...`);
           continue;
         }
       }
