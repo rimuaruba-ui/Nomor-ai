@@ -406,15 +406,19 @@ export default function App() {
     
     // Check for specific Gemini/Google AI status codes
     if (message.includes('429') || message.toLowerCase().includes('quota') || message.toLowerCase().includes('rate limit') || message.includes('RESOURCE_EXHAUSTED')) {
-      return "QUOTA EXCEEDED: Batas penggunaan API Gemini telah tercapai. Silakan gunakan API Key pribadi Anda di menu Pengaturan atau tunggu beberapa saat.";
+      return "QUOTA EXCEEDED: Batas penggunaan API Gemini bersama telah tercapai. Silakan pasang API Key pribadi Anda di menu Setelan, atau kurangi jumlah gambar yang diunggah sekaligus agar hemat kuota.";
     }
     
     if (message.includes('403') || message.toLowerCase().includes('permission denied') || message.toLowerCase().includes('not authorized')) {
-      return "PERMISSION DENIED: API Key tidak valid atau tidak memiliki izin akses. Pastikan API Key di Pengaturan sudah benar dan aktif.";
+      return "PERMISSION DENIED: API Key tidak valid atau tidak memiliki izin akses. Pastikan API Key di Setelan sudah benar dan aktif.";
     }
     
     if (message.includes('API_KEY_INVALID')) {
-      return "INVALID KEY: API Key yang Anda masukkan tidak valid. Silakan periksa kembali di menu Pengaturan.";
+      return "INVALID KEY: API Key yang Anda masukkan tidak valid. Silakan periksa kembali di menu Setelan.";
+    }
+
+    if (message.includes('Unexpected token') || message.includes('is not valid JSON') || message.includes('JSON.parse') || message.includes('JSON Input')) {
+      return "SISTEM OVERLOAD / TIMEOUT: Server atau Gateway mengembalikan dokumen HTML alih-alih data JSON. Hal ini biasanya disebabkan karena kuota API bersama habis, server sedang restart, atau durasi pengerjaan naskah terlalu lama karena memproses terlalu banyak gambar sekaligus. Solusi: Kurangi jumlah gambar yang diunggah sekali jalan (disarankan maksimal 3-5 gambar) atau gunakan API Key pribadi di menu Setelan.";
     }
 
     return message;
@@ -450,11 +454,30 @@ export default function App() {
       });
 
       if (!response.ok) {
-        const errData = await response.json();
-        throw new Error(errData.error || "Server error during generation");
+        let errorMsg = "Server error during generation";
+        try {
+          const errData = await response.json();
+          errorMsg = errData.error || errorMsg;
+        } catch {
+          try {
+            const rawHtml = await response.text();
+            if (rawHtml && (rawHtml.toLowerCase().includes("gateway") || rawHtml.toLowerCase().includes("timeout") || rawHtml.toLowerCase().includes("unavailable") || rawHtml.toLowerCase().includes("the page"))) {
+              errorMsg = "SISTEM OVERLOAD / TIMEOUT: Gateway atau server mengalami timeout saat memproses gambar Anda. Harap kurangi jumlah gambar atau gunakan API Key pribadi Anda di menu Setelan.";
+            } else if (rawHtml) {
+              errorMsg = `Server Response (HTML): ${rawHtml.slice(0, 120)}...`;
+            }
+          } catch {}
+        }
+        throw new Error(errorMsg);
       }
 
-      const data = await response.json();
+      let data: any;
+      try {
+        data = await response.json();
+      } catch (jsonErr) {
+        throw new Error("SISTEM OVERLOAD / TIMEOUT: Server mengembalikan dokumen HTML alih-alih data JSON. Silakan coba kurangi jumlah gambar atau pasang API Key Anda sendiri di menu Setelan.");
+      }
+
       const sanitizedNarrative = cleanClientNarrative(data.text || '');
       setFullNarrative(sanitizedNarrative);
       if (data.provider) {
